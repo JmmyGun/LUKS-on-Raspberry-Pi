@@ -1,106 +1,39 @@
-## LUKS on Raspberry Pi
+## LUKS su Raspberry Pi
 
-***Last updated: February 2021.***
+***Ultimo aggiornamento: Marzo 2024.***
 
+Questa guida spiega come crittografare la partizione root di una scheda SD con Raspberry Pi OS utilizzando LUKS. Il processo richiede un Raspberry Pi con Raspberry Pi OS sulla scheda SD e una memoria USB con almeno la stessa capacità della scheda SD. È importante avere un backup della scheda SD, nel caso in cui qualcosa vada storto, poiché verrà sovrascritta, così come della memoria USB.
 
-This guide explains how to encrypt the root partition of an SD Card with Raspberry Pi OS with LUKS. The process requires a Raspberry Pi running Raspberry Pi OS on the SD Card and a USB memory with the same capacity as the SD Card at least. It is important to have a backup of the SD Card, in case anything goes wrong, because it will be overwritten, and of the USB memory as well.
+La crittografia del disco completo è abbastanza semplice da eseguire con le moderne distribuzioni Linux. Raspberry Pi è un'eccezione perché la partizione di avvio non include la maggior parte dei programmi e dei moduli del kernel necessari. D'altra parte, è importante utilizzare la crittografia del disco con Raspberry Pi perché la scheda SD può essere estratta dall'unità e il suo contenuto letto abbastanza facilmente.
 
-Full disk encryption is quite easy to perform with modern Linux distributions. Raspberry Pi is an exception because the boot partition does not include most of the needed programs and kernel modules. On the other hand, it is important to use disk encryption with Raspberry Pi because the SD card can be extracted from the unit and its content read quite easily.
+### Requisiti
 
-### Requirements
-
-Linux kernel 5.0 or later. You can check it with this command:
+Kernel Linux 5.0 o successivo. Puoi verificarlo con questo comando:
 ```
 uname -s -r
 ```
-cryptsetup 2.0.6 or later. You can check it with this command:
+Installa i programmi necessari:
 ```
-cryptsetup --version
+sudo apt install busybox cryptsetup initramfs-tools resize2fs cryptsetup-initramfs
 ```
-You should install the programs needed:
-```
-sudo apt install busybox cryptsetup initramfs-tools
-```
-The microprocessors of Raspberry Pi computers do not include AES acceleration. That means that a software implementation of AES is needed, which is slow with modest hardware. Fortunately, there is a recent alternative, Adiantum, that runs fast in software.
-Linux kernel 5.0 or later includes the cryptographic kernel modules needed for Adiantum. You can check that every module is present and loaded with this command:
+I microprocessori dei computer Raspberry Pi non includono l'accelerazione AES. Ciò significa che è necessaria un'implementazione software di AES, che è lenta con un hardware modesto. Fortunatamente esiste una recente alternativa, Adiantum, che funziona velocemente nel software. Il kernel Linux 5.0 o successivo include i moduli del kernel crittografico necessari per Adiantum. Puoi verificare che ogni modulo sia presente e caricato con questo comando:
 ```
 cryptsetup benchmark -c xchacha20,aes-adiantum-plain64
 ```
-The output, if everything is all right, will be like this:
+L'output, se tutto è a posto, sarà simile a questo:
 ```
 # Tests are approximate using memory only (no storage IO).
 #            Algorithm |       Key |      Encryption |      Decryption
 xchacha20,aes-adiantum        256b       111.2 MiB/s       114.6 MiB/s
 ```
-If the execution shows an error message complaining about the cipher not being available, either the kernel modules are not present or are not loaded. You can load the necessary kernel modules for that cipher with ‘modprobe’:
-```
-sudo modprobe xchacha20
-sudo modprobe adiantum
-sudo modprobe nhpoly1305
-```
-If ‘modprobe’ complains about the module not being found, the kernel module is not present. A possible cause can be that the kernel version is not 5.0 or later.
+### Preparazione avvio di Linux
 
-You can check AES and see the speed difference with Adiantum:
-```
-# Tests are approximate using memory only (no storage IO).
-# Algorithm |   Key |      Encryption |      Decryption
-aes-xts        256b        88.7 MiB/s        86.2 MiB/s
-```
-
-### Preparing Linux
-
-‘initramfs’ has to be recreated when a new kernel is installed or just now that we have to change its configuration. We need to create a new file:
-```
-/etc/kernel/postinst.d/initramfs-rebuild
-```
-and it should have this content:
-```bash
-#!/bin/sh -e
-
-# Rebuild initramfs.gz after kernel upgrade to include new kernel's modules.
-# https://github.com/Robpol86/robpol86.com/blob/master/docs/_static/initramfs-rebuild.sh
-# Save as (chmod +x): /etc/kernel/postinst.d/initramfs-rebuild
-
-# Remove splash from cmdline.
-if grep -q '\bsplash\b' /boot/cmdline.txt; then
-  sed -i 's/ \?splash \?/ /' /boot/cmdline.txt
-fi
-
-# Exit if not building kernel for this Raspberry Pi's hardware version.
-version="$1"
-current_version="$(uname -r)"
-case "${current_version}" in
-  *-v7+)
-    case "${version}" in
-      *-v7+) ;;
-      *) exit 0
-    esac
-  ;;
-  *+)
-    case "${version}" in
-      *-v7+) exit 0 ;;
-    esac
-  ;;
-esac
-
-# Exit if rebuild cannot be performed or not needed.
-[ -x /usr/sbin/mkinitramfs ] || exit 0
-[ -f /boot/initramfs.gz ] || exit 0
-lsinitramfs /boot/initramfs.gz |grep -q "/$version$" && exit 0  # Already in initramfs.
-
-# Rebuild.
-mkinitramfs -o /boot/initramfs.gz "$version"
-```
-The file should be made executable:
-```
-sudo chmod +x /etc/kernel/postinst.d/initramfs-rebuild
-```
-We also need to specify some programs that need to be included in ‘initramfs’. We do that with a new file at:
+Bisogna specificare alcuni programmi che devono essere inclusi nell' 'initramfs'. Lo facciamo con un nuovo file:
 ```
 /etc/initramfs-tools/hooks/luks_hooks
 ```
-and it should have this content:
-```bash
+e deve contenere questo contenuto:
+```
 #!/bin/sh -e
 PREREQS=""
 case $1 in
@@ -113,16 +46,16 @@ copy_exec /sbin/resize2fs /sbin
 copy_exec /sbin/fdisk /sbin
 copy_exec /sbin/cryptsetup /sbin
 ```
-The programs are ‘resize2fs’, ‘fdisk’ and ‘cryptsetup’.
-The file should be made executable:
+I programmi sono 'resize2fs', 'fdisk' e 'cryptsetup'.
+Il file deve essere reso eseguibile:
 ```
 sudo chmod +x /etc/initramfs-tools/hooks/luks_hooks
 ```
-‘initramfs’ for Raspberry Pi OS does not include kernel modules for LUKS and encryption by default. We need to configure the kernel modules to add. This file has to be edited:
+L'initramfs per Raspberry Pi OS non include di default i moduli del kernel per LUKS e la crittografia. Bisogna configurare i moduli del kernel da aggiungere. Modifica:
 ```
 /etc/initramfs-tools/modules
 ```
-and the following lines with the names of kernel modules added:
+e le seguenti righe con i nomi dei moduli del kernel aggiunti:
 ```
 algif_skcipher
 xchacha20
@@ -132,153 +65,194 @@ sha256
 nhpoly1305
 dm-crypt
 ```
-Now we need to build the new ‘initramfs’:
+Rigenera ‘initramfs’:
 ```
-sudo -E CRYPTSETUP=y mkinitramfs -o /boot/initramfs.gz
+sudo update-initramfs -u
 ```
-You can ignore the warning about ‘cryptsetup’ if the next checking is correct.
-
-We can check that the programs are present in ‘initramfs’ with the following command:
+Verifica la presenza dei programmi nell'initramfs con il seguente comando:
 ```
 lsinitramfs /boot/initramfs.gz | grep -P "sbin/(cryptsetup|resize2fs|fdisk)"
 ```
-We can check that the kernel modules are present in ‘initramfs’ with the following command:
+Verifica che i moduli del kernel siano presenti nell'initramfs con il seguente comando:
 ```
 lsinitramfs /boot/initramfs.gz | grep -P "(algif_skcipher|chacha|adiantum|aes-arm|sha256|nhpoly1305|dm-crypt)"
 ```
 
-### Preparing Boot
-We need to modify some files before rebooting the Rasperry Pi. These changes are meant to tell the boot process to use an encrypted root filesystem. After the previous changes, the Raspberry Pi will boot correctly. After changing the following files, the Raspberry Pi will not boot to Desktop until the whole process of encrypting the root partition and configuring LUKS is completed. If after modifying the next four files and before the root partition is encrypted anything goes wrong, the changes in the four files can be reverted and the Raspberry Pi would boot normally. It is a good idea to make a copy of those file before modifying them.
-
-**File: /boot/config.txt**
-
-The next line has to be appended at the end of the file:
-```
-initramfs initramfs.gz followkernel
-```
+### Preparazione dell'avvio
+Prima di riavviare il Raspberry Pi, è necessario apportare alcune modifiche ai file. Queste modifiche servono per istruire il processo di avvio affinché utilizzi un filesystem root crittografato. Dopo aver effettuato le modifiche precedenti, il Raspberry Pi si avvierà correttamente. Tuttavia, dopo aver apportato le modifiche ai seguenti file, il Raspberry Pi non avvierà l'interfaccia desktop finché non sarà completato l'intero processo di crittografia della partizione radice e la configurazione di LUKS. Nel caso in cui si verifichino problemi dopo aver apportato modifiche ai successivi quattro file e prima della crittografia della partizione radice, è possibile ripristinare le modifiche nei quattro file e il Raspberry Pi si avvierà normalmente. È consigliabile fare una copia di questi file prima di apportare modifiche.
 
 **File: /boot/cmdline.txt**
 
-It contains one line with parameters. One of them is ‘root’, that specifies the location of the root partition. For Raspberry Pi is usually ‘/dev/mmcblk0p2’, but it can also be other device (or the same) specified as “PARTUUID=xxxxx”. The value of ‘root’ has to be change to ‘/dev/mapper/sdcard’. For example, if ‘root’ is:
+Contiene una riga con dei parametri. Uno di essi è 'root', che specifica la posizione della partizione root. Per il Raspberry Pi di solito è '/dev/mmcblk0p2', ma può anche essere un altro dispositivo (o lo stesso) specificato come "PARTUUID=xxxxx". Il valore di 'root' deve essere cambiato in '/dev/mapper/sdcard'. Ad esempio, se 'root' è:
 ```
 root=/dev/mmcblk0p2
 ```
-it should be changed to:
+deve essere cambiato in:
 ```
 root=/dev/mapper/sdcard
 ```
-also, at the end of the line, separated by a space, this text should be appended:
+inoltre, alla fine della riga, separato da uno spazio, deve essere aggiunto:
 ```
 cryptdevice=/dev/mmcblk0p2:sdcard
 ```
 
 **File: /etc/fstab**
 
-The device for root partition (‘/’) should be changed to the mapper.
-For example, if the device for root is:
+Il dispositivo per la partizione root (‘/’) deve essere cambiato con il mapper. 
+Ad esempio, se il dispositivo per la root è:
 ```
 /dev/mmcblk0p2
 ```
-it should be changed to:
+deve essere cambiato con:
 ```
 /dev/mapper/sdcard
 ```
 
 **File: etc/crypttab**
 
-At the end of the file a new line should be appended with the next content:
+Alla fine del file, una nuova riga deve essere aggiunta con il seguente contenuto:
 ```
 sdcard	/dev/mmcblk0p2	none	luks
 ```
 
-Everything is ready now to reboot. After rebooting, Raspberry Pi OS will fail to start because we have configured a root partition that does not exist yet. After several equal messages indicating the failure, the ‘initramfs’ shell will show.
+Tutto è pronto per il riavvio. Dopo il riavvio, Raspberry Pi OS non riuscirà a avviarsi perché abbiamo configurato una partizione root che non esiste ancora. Dopo diversi messaggi uguali che indicano il fallimento, verrà visualizzata la shell ‘initramfs’.
 
-### Encrypting the root partition
+### Crittografia della partizione root
 
-In the ‘initramfs’ shell, we can check that we can use ‘cryptsetup’ with the kernel module ciphers:
+Nella shell ‘initramfs’, possiamo verificare l'utilizzo di ‘cryptsetup’ con i moduli kernel dei cifrari:
 ```
 cryptsetup benchmark -c xchacha20,aes-adiantum-plain64
 ```
-If the test is completed, everything is all right. Now we have to copy the root partition of the SD Card to the USB memory. The idea is to have a copy of the root partition of the SD Card in the USB memory, create an encrypted volume in the root partition (the content will be lost) and copy the root partition in the USB memory back to the encrypted partition of the SD Card. Take into account that the previous content of the USB memory will be lost. Before doing that, we are going to check the root partition and reduce the size of its filesystem to the minimum possible, so that the copy operation takes less time. The command to check it and correct possible errors is:
+Se il test viene completato con successo, tutto è a posto. Ora dobbiamo copiare la partizione root della scheda SD nella memoria USB. L'idea è quella di avere una copia della partizione root della scheda SD nella memoria USB, creare un volume crittografato nella partizione root (il contenuto verrà perso) e copiare la partizione root dalla memoria USB nella partizione crittografata della scheda SD. Tieni presente che il contenuto precedente della memoria USB verrà perso. Prima di farlo, controlliamo la partizione root e riduciamo le dimensioni del suo filesystem al minimo possibile, in modo che l'operazione di copia richieda meno tempo. Il comando per controllare e correggere eventuali errori è:
 ```
 e2fsck -f /dev/mmcblk0p2
 ```
-After finishing, we have to resize the filesystem. It is very important to take note of the size of the filesystem after resizing it, the number of blocks of 4k:
+Una volta terminato, dobbiamo ridimensionare il filesystem. È estremamente importante annotare attentamente le dimensioni del filesystem dopo il ridimensionamento, in particolare il numero di blocchi da 4k:
 ```
 resize2fs -fM -p /dev/mmcblk0p2
 ```
-An example of the output of the program is:
+Un esempio dell'output del programma è:
 ```
-Resizing the filesystem on /dev/mmcblk0p2 to 2345678 (4k) blocks.
+Resizing the filesystem on /dev/mmcblk0p2 to 524288 (4k) blocks.
 ```
-The number to take note of is ‘2345678’ in the example.
-Once the resizing is finished we are going to get a checksum value of the whole partition. We will do the same after every copy operation between SD card and USB memory. If the checksum is the same, the copy will be equal. Let’s create the checksum for the root partition to copy. Remember to substitute ‘XXXXX’ with the number of 4k blocks you got after resizing the filesystem. It is useful to add “time ” before “dd” to obtain how long it takes the operation. When the rest of checksums are calculate it, it allows to know, more or less, how much time I will take:
+Il numero da annotare è '524288' nell'esempio.
+Una volta completato il ridimensionamento, otterremo un valore del checksum dell'intera partizione. Faremo lo stesso dopo ogni operazione di copia tra la scheda SD e la memoria USB. Se il checksum è lo stesso, la copia sarà identica. Creiamo il checksum per la partizione root da copiare. Ricordati di sostituire 'XXXXX' con il numero di blocchi da 4 kB ottenuto dopo il ridimensionamento del filesystem. È utile aggiungere "time " prima di "dd" per ottenere quanto tempo impiega l'operazione. Quando vengono calcolati i restanti checksum, permette di sapere, più o meno, quanto tempo ci vorrà.
 ```
 time dd bs=4k count=XXXXX if=/dev/mmcblk0p2 | sha1sum
 ```
-Take note of the SHA1 value. 
-Connect now the USB memory to the Raspberry Pi. Some information about the USB memory will be printed. If there is no other USB memory connected, the device for the memory will probably be /dev/sda. It can be checked with:
+Annota il valore SHA1.
+Collega ora la memoria USB al Raspberry Pi. Verranno stampate alcune informazioni sulla memoria USB. Se non è collegata un'altra memoria USB, il dispositivo per la memoria sarà probabilmente /dev/sda. Può essere verificato con:
 ```
 fdisk -l /dev/sda
 ```
-We are going to use the whole USB memory, /dev/sda.
-This operation will copy the root filesystem of the SD Card into the USB memory device, deleting all its content (remember to substitute ‘XXXXX’ with the number of 4k blocks you got after resizing the filesystem):
+Stiamo per utilizzare l'intera memoria USB, /dev/sda. Questa operazione copierà il filesystem root della scheda SD nel dispositivo di memoria USB, cancellando tutto il suo contenuto (ricorda di sostituire 'XXXXX' con il numero di blocchi da 4k ottenuto dopo il ridimensionamento del filesystem):
 ```
 time dd bs=4k count=XXXXX if=/dev/mmcblk0p2 of=/dev/sda
 ```
-While copying to or from SD cards and USB memories a message might appear indicating that task worker has been block for several seconds. It can be ignored if the checksums are correct.
+Durante la copia da o verso schede SD e memorie USB potrebbe comparire un messaggio che indica che il task worker è stato bloccato per diversi secondi. Può essere ignorato se i checksum sono corretti.
 
-Now we have the original root filesystem and the copy. We also have the checksum of the original. We have to calculate the checksum of the copy and compare them. We can consider they are a exact copy if the checksums coincide. The command to calculate the checksum of the copy is (remember to substitute ‘XXXXX’ with the number of 4k blocks you got after resizing the filesystem):
+Ora abbiamo il filesystem root originale e la copia. Abbiamo anche il checksum dell'originale. Dobbiamo calcolare il checksum della copia e confrontarli. Possiamo considerarli una copia esatta se i checksum coincidono. Il comando per calcolare il checksum della copia è (ricordati di sostituire 'XXXXX' con il numero di blocchi da 4k che hai ottenuto dopo il ridimensionamento del filesystem):
 ```
 time dd bs=4k count=XXXXX if=/dev/sda | sha1sum
 ```
-Assuming that the checksums are correct, now it is time to encrypt the root filesystem of the SD Card, to create the LUKS volume using ‘cryptsetup’. There are many parameters and possible values for the encryption. This is the command I have chosen:
+Se i checksum sono corretti, è il momento di criptare il filesystem root della scheda SD, per creare il volume LUKS utilizzando 'cryptsetup'. Ci sono molti parametri e possibili valori per la crittografia. Questo è il comando che ho scelto:
 ```
-cryptsetup --type luks2 --cipher xchacha20,aes-adiantum-plain64 --hash sha256 --iter-time 5000 –keysize 256 --pbkdf argon2i luksFormat /dev/mmcblk0p2
+cryptsetup --type luks2 --cipher xchacha20,aes-adiantum-plain64 --hash sha256 --iter-time 5000 –-key-size 256 --pbkdf argon2i luksFormat /dev/mmcblk0p2
 ```
-More information about the parameters can be found here:
+Ulteriori informazioni sui parametri possono essere trovate qui:
 <https://man7.org/linux/man-pages/man8/cryptsetup.8.html>
 
-The command will ask for a passphrase twice (for confirmation). It is important that the passphrase is long and uses different characters sets (letter, numbers, symbols, uppercase, lower case, etc.).
-After creating the LUKS volumen, we have to open it and copy the content of the root filesystem into it. The command to open the LUKS volume is:
+Il comando richiederà una passphrase due volte (per conferma). È importante che la passphrase sia lunga e utilizzi diversi set di caratteri (lettere, numeri, simboli, maiuscole, minuscole, ecc.).
+Dopo aver creato il volume LUKS, dobbiamo aprirlo e copiare il contenuto del filesystem root al suo interno. Il comando per aprire il volume LUKS è:
 ```
 cryptsetup luksOpen /dev/mmcblk0p2 sdcard
 ```
-It will ask the passphrase chosen in the previous stage. Once opened, we copy the root filesystem in the USB memory into the encrypted volume (remember to substitute ‘XXXXX’ with the number of 4k blocks you got after resizing the filesystem):
+Chiederà la passphrase scelta nella fase precedente. Una volta aperto, copiamo il filesystem root dalla memoria USB nel volume crittografato (ricordati di sostituire ‘XXXXX’ con il numero di blocchi da 4k ottenuti dopo il ridimensionamento del filesystem):
 ```
 time dd bs=4k count=XXXXX if=/dev/sda of=/dev/mapper/sdcard
 ```
-After copied, we have to calculate the checksum of the copy once more to validate it. If the checksums coincide, the copy is correct (remember to substitute ‘XXXXX’ with the number of 4k blocks you got after resizing the filesystem):
+Dopo aver copiato, calcola nuovamente il checksum della copia per convalidarlo. Se i checksum coincidono, la copia è corretta (ricordati di sostituire ‘XXXXX’ con il numero di blocchi da 4k ottenuti dopo il ridimensionamento del filesystem):
 ```
 time dd bs=4k count=XXXXX if=/dev/mapper/sdcard | sha1sum
 ```
-In addition to the checksum check, we check the the filesystem of the LUKS volume:
+Oltre al controllo del checksum, verifica anche il filesystem del volume LUKS:
 ```
 e2fsck -f /dev/mapper/sdcard
 ```
-We copied a reduced filesystem. Now we have to expand it to the size of the SD Card:
+Il fylesystem è ridotto. Ora espandilo alla dimensione della scheda SD:
 ```
 resize2fs -f /dev/mapper/sdcard
 ```
-The process is nearly finished now. The USB memory can be extracted because is not needed anymore. We have to exit for the boot process to continue:
+Il processo è quasi terminato ora. La memoria USB può essere rimossa perché non è più necessaria. Esci dall'initramfs:
 ```
 exit
 ```
-The boot process will enter into initramfs shell again. At this moment we have to open the LUKS volume we just created to make the root filesystem available:
+Durante il processo di avvio, si entrerà nuovamente nella shell di initramfs. In questo momento bisogna aprire il volume LUKS appena creato per rendere disponibile il filesystem root:
 ```
 cryptsetup luksOpen /dev/mmcblk0p2 sdcard
 ```
-After opening the LUKS volumen we have to exit again and Raspberry Pi OS will start normally:
+Dopo aver aperto il volume LUKS, dobbiamo uscire nuovamente e il sistema operativo Raspberry Pi OS si avvierà normalmente:
 ```
 exit
 ```
 
-### Booting
-We do not want to enter into initramfs shell every time we switch on our Raspberry Pi. We can make Raspberry Pi OS ask for the password. What we need for that is building initramfs once more and reboot:
+### Avvio
+Non vogliamo entrare nella shell di initramfs ogni volta che accendiamo il nostro Raspberry Pi. Possiamo fare in modo che Raspberry Pi OS chieda la password. Per farlo, è necessario ricompilare l'initramfs e riavviare:
 ```
-sudo mkinitramfs -o /tmp/initramfs.gz
-sudo cp /tmp/initramfs.gz /boot/initramfs.gz
+sudo update-initramfs -u
 ```
 
-After rebooting, a prompt message should appear, something like “Please unlock disk...”. Perhaps the prompt asking for a password will get lost between some star-up messages, but you can enter your passphrase anyway and it should work.
+Dopo il riavvio, dovrebbe apparire un messaggio di prompt, simile a "Please unlock disk...". Forse il prompt che chiede una password si perderà tra alcuni messaggi di avvio, ma puoi comunque inserire la tua passphrase e dovrebbe funzionare.
+
+###Sblocco automatico di dischi crittografati con LUKS tramite file chiave ⚠️(NON SICURO)
+
+In questa sezione della guida, viene spiegato come configurare il sistema per lo sblocco automatico della partizione root crittografata utilizzando LUKS tramite un file chiave. È importante tenere presente che questa procedura comporta il rischio di sicurezza associato al salvataggio del file chiave nella cartella di boot del sistema. Si consiglia di considerare attentamente i rischi e di adottare misure aggiuntive per proteggere la sicurezza del sistema.
+
+Crea la cartella contenente la chiave:
+```
+sudo mkdir /boot/key && cd /boot/key 
+```
+
+Generazione della chiave
+Crea la chiave e rendila in sola lettura:
+```
+sudo dd if=/dev/urandom of=keyfile bs=4096 count=4
+```
+rendila in sola lettura
+```
+sudo chmod 0400 keyfile
+```
+I dispositivi abilitati LUKS/dm_crypt possono contenere fino a 10 diverse keyfile/password. Quindi, oltre ad avere la password già impostata, aggiungi questo file chiave come metodo di autorizzazione aggiuntivo, ti verrà chiesto di inserire la passpharse.
+```
+sudo cryptsetup luksAddKey /dev/mmcblk0p2 keyfile
+```
+Puoi verificare l'aggiunta della chiave con il comando: 
+```
+sudo cryptsetup luksDump /dev/mmcblk0p2
+```
+Come risultato dovresti vedere i 2 keyslot "0", "1".
+Puoi testare la chiave appena creata usandi il comando:
+```
+sudo cryptsetup open -v -d keyfile --test-passphrase /dev/mmcblk0p2
+```
+Il risultato dovrebbe essere simile a questo:
+```
+No usable token is available.
+Key slot 2 unlocked.
+Command successful.
+```
+Modifichiamo il mapper precedentemente creato quindi:
+```
+sudo nano /etc/crypttab
+```
+modifichiamo la prima riga da:
+```
+sdcard	/dev/mmcblk0p2	none	luks
+```
+così:
+```
+sdcard  /dev/mmcblk0p2  /boot/key/keyfile luks
+```
+Ora riavvia e il sistema dovrebbe avviarsi senza richiederti la pass se tutto è andato bene.
+
 
