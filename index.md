@@ -1,4 +1,4 @@
-## LUKS su Raspberry Pi
+## LUKS su Raspberry Pi + sblocco e avvio automatico
 
 ***Ultimo aggiornamento: Marzo 2024.***
 
