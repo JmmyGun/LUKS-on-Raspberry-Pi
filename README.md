@@ -1,5 +1,5 @@
 # LUKS-su-Raspberry-Pi
-### Guida per eseguire una crittografia completa del disco della scheda SD di un Raspberry Pi con Raspberry Pi OS 
+### Guida per eseguire una crittografia completa della scheda SD di un Raspberry Pi con Raspberry Pi OS
 ### Sblocco e avvio automatico della partizione root crittografata con LUKS tramite file chiave memorizzato nella partizione Boot ⚠️(NON SICURO)
 
 
