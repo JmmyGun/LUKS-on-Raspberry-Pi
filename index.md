@@ -204,7 +204,7 @@ sudo update-initramfs -u
 
 Dopo il riavvio, dovrebbe apparire un messaggio di prompt, simile a "Please unlock disk...". Forse il prompt che chiede una password si perderà tra alcuni messaggi di avvio, ma puoi comunque inserire la tua passphrase e dovrebbe funzionare.
 
-## ### Sblocco e avvio automatico della partizione root crittografata con LUKS tramite file chiave memorizzato nella partizione Boot ⚠️(NON SICURO)
+## Sblocco e avvio automatico della partizione root crittografata con LUKS tramite file chiave memorizzato nella partizione Boot ⚠️(NON SICURO)
 
 In questa sezione della guida, viene spiegato come configurare il sistema per lo sblocco automatico della partizione root crittografata utilizzando LUKS tramite un file chiave. È importante tenere presente che questa procedura comporta il rischio di sicurezza associato al salvataggio del file chiave nella cartella di boot del sistema. Si consiglia di considerare attentamente i rischi e di adottare misure aggiuntive per proteggere la sicurezza del sistema.
 
