@@ -197,7 +197,7 @@ exit
 ```
 
 ### Avvio
-Non vogliamo entrare nella shell di initramfs ogni volta che accendiamo il nostro Raspberry Pi. Possiamo fare in modo che Raspberry Pi OS chieda la password. Per farlo, è necessario ricompilare l'initramfs e riavviare:
+Non vogliamo entrare nella shell di initramfs ogni volta che accendiamo il nostro Raspberry Pi. Possiamo fare in modo che Raspberry Pi OS chieda la password. Per farlo, è necessario rigenerare l'initramfs e riavviare:
 ```
 sudo update-initramfs -u
 ```
@@ -252,6 +252,10 @@ sdcard	/dev/mmcblk0p2	none	luks
 così:
 ```
 sdcard  /dev/mmcblk0p2  /boot/key/keyfile luks
+```
+Rigenera l'initramfs
+```
+sudo update-initramfs -u
 ```
 Ora riavvia e il sistema dovrebbe avviarsi senza richiederti la pass se tutto è andato bene.
 
