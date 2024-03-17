@@ -33,7 +33,7 @@ Bisogna specificare alcuni programmi che devono essere inclusi nell' 'initramfs'
 /etc/initramfs-tools/hooks/luks_hooks
 ```
 e deve contenere questo contenuto:
-```
+```bash
 #!/bin/sh -e
 PREREQS=""
 case $1 in
